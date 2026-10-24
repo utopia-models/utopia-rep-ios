@@ -1,0 +1,19 @@
+{
+  "name": "utopia-rep-ios",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Capacitor iOS shell of the rep app (utopia-models/knowledge#9978). Loads the deployed rep PWA; adds push, camera and GPS natively.",
+  "scripts": {
+    "sync": "cap sync ios"
+  },
+  "dependencies": {
+    "@capacitor/camera": "^8.2.6",
+    "@capacitor/core": "^8.5.3",
+    "@capacitor/geolocation": "^8.2.4",
+    "@capacitor/ios": "^8.5.3",
+    "@capacitor/push-notifications": "^8.1.3"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^8.5.3"
+  }
+}

@@ -1,0 +1,70 @@
+# The rep app's iOS shell (knowledge#9978): a Capacitor wrapper of the rep PWA, built on a hosted macOS runner because
+# no Mac is in the fleet. This repo is PUBLIC for that reason: the org's hosted minutes are frozen (a private repo's
+# macOS job is refused "spending limit needs to be increased", utopia-models/cleaning run 40049109342) and hosted
+# runners are free on public repos. Nothing secret lives here; the four signing secrets are repo secrets. `simulator` needs no Apple account and proves the project compiles. `testflight` archives,
+# signs (automatic signing through the App Store Connect API key) and uploads to TestFlight; it runs only once the
+# four ASC_* / APPLE_TEAM_ID secrets exist, which needs the Apple Developer Program enrollment (README.md).
+name: ios
+on:
+  push:
+    branches: ["**"]
+  workflow_dispatch: {}
+concurrency:
+  group: ios-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  simulator:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - run: npm ci --no-audit --no-fund
+      - run: npx cap sync ios
+      - run: xcodebuild -version
+      - name: Build for the simulator (unsigned)
+        run: >-
+          xcodebuild -project ios/App/App.xcodeproj -scheme App -configuration Release
+          -sdk iphonesimulator -destination 'generic/platform=iOS Simulator'
+          -derivedDataPath build CODE_SIGNING_ALLOWED=NO build
+      - run: ls -la build/Build/Products/Release-iphonesimulator/App.app && plutil -p build/Build/Products/Release-iphonesimulator/App.app/Info.plist | grep -E 'CFBundleIdentifier|Usage|UIBackgroundModes' -A1
+      - uses: actions/upload-artifact@v4
+        with: { name: UtopiaRep-simulator, path: build/Build/Products/Release-iphonesimulator/App.app, retention-days: 14 }
+
+  testflight:
+    needs: simulator
+    runs-on: macos-15
+    env:
+      ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+      ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+      ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+    steps:
+      - id: gate
+        run: |
+          if [ -n "$ASC_KEY_ID" ] && [ -n "$ASC_ISSUER_ID" ] && [ -n "$ASC_KEY_P8" ] && [ -n "$APPLE_TEAM_ID" ]; then
+            echo "ready=1" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::TestFlight skipped: ASC_KEY_ID / ASC_ISSUER_ID / ASC_KEY_P8 / APPLE_TEAM_ID not set (Apple Developer Program enrollment pending, knowledge#9978)"
+          fi
+      - if: steps.gate.outputs.ready == '1'
+        uses: actions/checkout@v4
+      - if: steps.gate.outputs.ready == '1'
+        uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - if: steps.gate.outputs.ready == '1'
+        run: npm ci --no-audit --no-fund && npx cap sync ios
+      - if: steps.gate.outputs.ready == '1'
+        name: Archive, sign and upload to TestFlight
+        run: |
+          key="$RUNNER_TEMP/AuthKey_$ASC_KEY_ID.p8"
+          printf '%s' "$ASC_KEY_P8" > "$key"
+          auth=(-allowProvisioningUpdates -authenticationKeyPath "$key" -authenticationKeyID "$ASC_KEY_ID" -authenticationKeyIssuerID "$ASC_ISSUER_ID")
+          build="$(date -u +%Y%m%d%H%M)"
+          xcodebuild -project ios/App/App.xcodeproj -scheme App -configuration Release \
+            -destination 'generic/platform=iOS' -archivePath "$RUNNER_TEMP/App.xcarchive" \
+            DEVELOPMENT_TEAM="$APPLE_TEAM_ID" CURRENT_PROJECT_VERSION="$build" "${auth[@]}" archive
+          sed "s/\$(APPLE_TEAM_ID)/$APPLE_TEAM_ID/" ExportOptions.plist > "$RUNNER_TEMP/ExportOptions.plist"
+          xcodebuild -exportArchive -archivePath "$RUNNER_TEMP/App.xcarchive" \
+            -exportOptionsPlist "$RUNNER_TEMP/ExportOptions.plist" -exportPath "$RUNNER_TEMP/export" "${auth[@]}"
+          echo "::notice::Uploaded build $build of com.utopiacleans.rep to App Store Connect"

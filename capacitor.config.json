@@ -1,0 +1,17 @@
+{
+  "appId": "com.utopiacleans.rep",
+  "appName": "Utopia Rep",
+  "webDir": "www",
+  "server": {
+    "url": "https://cleaning.utopiamodels.ai/rep",
+    "errorPath": "offline.html",
+    "allowNavigation": ["cleaning.utopiamodels.ai"]
+  },
+  "ios": {
+    "contentInset": "automatic",
+    "limitsNavigationsToAppBoundDomains": false
+  },
+  "plugins": {
+    "PushNotifications": { "presentationOptions": ["badge", "sound", "alert"] }
+  }
+}
